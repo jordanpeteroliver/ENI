@@ -135,10 +135,21 @@ export class GdmLiveAudioVisuals3D extends LitElement {
       shader.uniforms.time = {value: 0};
       shader.uniforms.inputData = {value: new THREE.Vector4()};
       shader.uniforms.outputData = {value: new THREE.Vector4()};
+      shader.uniforms.emotionColor = {value: new THREE.Color(0x000010)};
 
       sphereMaterial.userData.shader = shader;
 
       shader.vertexShader = sphereVS;
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <common>',
+        `#include <common>
+         uniform vec3 emotionColor;`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'vec4 diffuseColor = vec4( diffuse, opacity );',
+        'vec4 diffuseColor = vec4( emotionColor, opacity );'
+      );
     };
 
     const sphere = new THREE.Mesh(geometry, sphereMaterial);
@@ -236,6 +247,18 @@ export class GdmLiveAudioVisuals3D extends LitElement {
         (10 * this.outputAnalyser.data[2]) / 255,
         0,
       );
+
+      // Emotion color logic
+      const agitation = this.outputAnalyser.data[0] / 255;
+      
+      // Interpolate between deep blue (calm) and bright red (agitated)
+      const calmColor = new THREE.Color(0x000010);
+      const agitatedColor = new THREE.Color(0xff2200);
+      const currentColor = calmColor.clone().lerp(agitatedColor, agitation * 1.5);
+      
+      sphereMaterial.userData.shader.uniforms.emotionColor.value.copy(currentColor);
+      sphereMaterial.emissive.copy(currentColor);
+      sphereMaterial.emissiveIntensity = 1.5 + (agitation * 5.0);
     }
 
     this.composer.render();

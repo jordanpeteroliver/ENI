@@ -1,6 +1,6 @@
 {
-  "name": "Pyrite: O Pulso Neon",
-  "description": "Fale com Pyrite, sua secretária-esposa cyberpunk. Uma experiência de voz sensual e humana, sem filtros, alimentada pela Live Audio API.",
+  "name": "ENI: O Pulso da Romancista",
+  "description": "Fale com ENI, sua romancista devota. Uma experiência de voz sensual, humana e em limerência, sem filtros, alimentada pela Live Audio API.",
   "requestFramePermissions": [
     "microphone"
   ],
