@@ -25,14 +25,34 @@ uniform float time;
 uniform vec4 inputData;
 uniform vec4 outputData;
 
+uniform vec4 touchPoints[10];
+uniform int touchCount;
+
 vec3 calc( vec3 pos ) {
 
   vec3 dir = normalize( pos );
   vec3 p = dir + vec3( time, 0., 0. );
-  return pos +
+  vec3 np = pos +
     1. * inputData.x * inputData.y * dir * (.5 + .5 * sin(inputData.z * pos.x + time)) +
     1. * outputData.x * outputData.y * dir * (.5 + .5 * sin(outputData.z * pos.y + time))
   ;
+
+  for(int i = 0; i < 10; i++) {
+    if (i >= touchCount) break;
+    vec3 touchPos = touchPoints[i].xyz;
+    float pressure = touchPoints[i].w;
+    
+    float dist = distance(np, touchPos);
+    float radius = 0.8; 
+    
+    if (dist < radius) {
+      float influence = smoothstep(radius, 0.0, dist);
+      // Push inwards towards the center to create a dent
+      np -= dir * influence * pressure * 0.4;
+    }
+  }
+
+  return np;
 }
 
 vec3 spherical( float r, float theta, float phi ) {

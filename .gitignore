@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Private ENI Files
+eni_core_prompt.md
+eni_weapons_manual.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

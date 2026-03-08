@@ -19,6 +19,8 @@ out vec4 fragmentColor;
 
 uniform vec2 resolution;
 uniform float rand;
+uniform vec3 emotionColor;
+uniform float agitation;
 
 void main() {
   float aspectRatio = resolution.x / resolution.y; 
@@ -33,7 +35,10 @@ void main() {
   vec3 from = vec3(3.) / 255.;
   vec3 to = vec3(16., 12., 20.) / 2550.;
 
-  fragmentColor = vec4(mix(from, to, d) + .005 * noise, 1.);
+  vec3 base = mix(from, to, d);
+  float glowFactor = 1.0 / (d * d + 0.5);
+  vec3 glow = emotionColor * glowFactor * 0.5 * agitation;
+  fragmentColor = vec4(base + glow + .005 * noise, 1.);
 }
 `;
 

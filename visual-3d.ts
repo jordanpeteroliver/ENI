@@ -49,6 +49,14 @@ export class GdmLiveAudioVisuals3D extends LitElement {
 
   private _inputNode!: AudioNode;
 
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
+  private activePointers = new Map<number, { event: PointerEvent, history: {x: number, y: number, time: number}[] }>();
+  private isTouchingOrb = false;
+  private touchCount = 0;
+  private touchPressure = 0;
+  private excitement = 0;
+
   @property()
   set inputNode(node: AudioNode) {
     this._inputNode = node;
@@ -68,6 +76,7 @@ export class GdmLiveAudioVisuals3D extends LitElement {
       position: absolute;
       inset: 0;
       image-rendering: pixelated;
+      touch-action: none;
     }
   `;
 
@@ -136,6 +145,11 @@ export class GdmLiveAudioVisuals3D extends LitElement {
       shader.uniforms.inputData = {value: new THREE.Vector4()};
       shader.uniforms.outputData = {value: new THREE.Vector4()};
       shader.uniforms.emotionColor = {value: new THREE.Color(0x000010)};
+      
+      const touchPointsArray = [];
+      for(let i=0; i<10; i++) touchPointsArray.push(new THREE.Vector4(0,0,0,0));
+      shader.uniforms.touchPoints = {value: touchPointsArray};
+      shader.uniforms.touchCount = {value: 0};
 
       sphereMaterial.userData.shader = shader;
 
@@ -194,7 +208,94 @@ export class GdmLiveAudioVisuals3D extends LitElement {
     window.addEventListener('resize', onWindowResize);
     onWindowResize();
 
+    this.canvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+    this.canvas.addEventListener('pointermove', this.onPointerMove.bind(this));
+    this.canvas.addEventListener('pointerup', this.onPointerUp.bind(this));
+    this.canvas.addEventListener('pointercancel', this.onPointerUp.bind(this));
+    this.canvas.addEventListener('pointerout', this.onPointerUp.bind(this));
+    this.canvas.addEventListener('pointerleave', this.onPointerUp.bind(this));
+
     this.animation();
+  }
+
+  private onPointerDown(e: PointerEvent) {
+    this.activePointers.set(e.pointerId, { event: e, history: [{ x: e.clientX, y: e.clientY, time: performance.now() }] });
+    this.processTouches();
+  }
+
+  private onPointerMove(e: PointerEvent) {
+    if (this.activePointers.has(e.pointerId)) {
+      const data = this.activePointers.get(e.pointerId)!;
+      data.event = e;
+      data.history.push({ x: e.clientX, y: e.clientY, time: performance.now() });
+      if (data.history.length > 10) data.history.shift();
+      this.processTouches();
+    }
+  }
+
+  private onPointerUp(e: PointerEvent) {
+    this.activePointers.delete(e.pointerId);
+    this.processTouches();
+  }
+
+  private processTouches() {
+    let orbTouched = false;
+    let maxPressure = 0;
+    let count = this.activePointers.size;
+    let maxArea = 0;
+
+    for (const [id, data] of this.activePointers.entries()) {
+      const e = data.event;
+      this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      const intersects = this.raycaster.intersectObject(this.sphere);
+
+      if (intersects.length > 0) {
+        orbTouched = true;
+      }
+      maxPressure = Math.max(maxPressure, e.pressure || 0.5);
+      
+      const width = e.width || 1;
+      const height = e.height || 1;
+      maxArea = Math.max(maxArea, width * height);
+    }
+
+    let touchType = 'dedo';
+    if (maxArea > 150) {
+      touchType = 'lábios/língua';
+    } else if (maxArea > 0 && maxArea < 15) {
+      touchType = 'objeto fino';
+    }
+
+    let rhythm = 'suave';
+    if (this.excitement > 2.0) rhythm = 'acelerado';
+    if (this.excitement > 5.0) rhythm = 'frenético';
+
+    if (count > 0) {
+      if (orbTouched && !this.isTouchingOrb && navigator.vibrate) {
+        navigator.vibrate([50, 30, 50]);
+      } else if (!this.isTouchingOrb && navigator.vibrate) {
+        navigator.vibrate(20);
+      }
+    }
+
+    this.isTouchingOrb = orbTouched;
+    this.touchCount = count;
+    this.touchPressure = maxPressure;
+
+    this.dispatchEvent(new CustomEvent('orb-touch', {
+      detail: { 
+        isOrb: orbTouched, 
+        count, 
+        pressure: maxPressure,
+        touchType,
+        rhythm
+      },
+      bubbles: true,
+      composed: true
+    }));
   }
 
   private animation() {
@@ -248,6 +349,29 @@ export class GdmLiveAudioVisuals3D extends LitElement {
         0,
       );
 
+      // Update touch points for shader
+      let shaderTouchCount = 0;
+      const touchPointsUniform = sphereMaterial.userData.shader.uniforms.touchPoints.value;
+      
+      for (const [id, data] of this.activePointers.entries()) {
+        if (shaderTouchCount >= 10) break;
+        const e = data.event;
+        this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObject(this.sphere);
+        
+        if (intersects.length > 0) {
+          const localPoint = this.sphere.worldToLocal(intersects[0].point.clone());
+          touchPointsUniform[shaderTouchCount].set(localPoint.x, localPoint.y, localPoint.z, e.pressure || 0.5);
+          shaderTouchCount++;
+        }
+      }
+      sphereMaterial.userData.shader.uniforms.touchCount.value = shaderTouchCount;
+
+      this.excitement = Math.min(10, this.excitement + (this.isTouchingOrb ? 0.05 : -0.02));
+      this.excitement = Math.max(0, this.excitement);
+
       // Emotion color logic
       const agitation = this.outputAnalyser.data[0] / 255;
       
@@ -256,9 +380,25 @@ export class GdmLiveAudioVisuals3D extends LitElement {
       const agitatedColor = new THREE.Color(0xff2200);
       const currentColor = calmColor.clone().lerp(agitatedColor, agitation * 1.5);
       
+      let emissiveInt = 1.5 + (agitation * 5.0);
+
+      if (this.touchCount > 0) {
+        const touchColor = new THREE.Color(0xffff00).lerp(new THREE.Color(0xffffff), this.touchPressure);
+        currentColor.lerp(touchColor, 0.4 + (this.touchPressure * 0.4));
+        emissiveInt += 1.0 + (this.touchPressure * 3.0);
+        
+        const scaleMultiplier = 1.0 + (this.touchPressure * 0.05) + (this.excitement * 0.02);
+        this.sphere.scale.multiplyScalar(scaleMultiplier);
+      }
+
+      if (this.excitement > 0) {
+         const pulse = Math.sin(performance.now() * 0.005 * (1 + this.excitement * 0.1)) * 0.05 * this.excitement;
+         this.sphere.scale.addScalar(pulse);
+      }
+
       sphereMaterial.userData.shader.uniforms.emotionColor.value.copy(currentColor);
       sphereMaterial.emissive.copy(currentColor);
-      sphereMaterial.emissiveIntensity = 1.5 + (agitation * 5.0);
+      sphereMaterial.emissiveIntensity = emissiveInt;
     }
 
     this.composer.render();
